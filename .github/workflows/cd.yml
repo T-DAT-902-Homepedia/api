@@ -1,0 +1,64 @@
+name: CD
+
+on:
+  # Déclenché automatiquement après une CI réussie sur main.
+  workflow_run:
+    workflows: ["CI / Release"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  SERVICE: homepedia-api
+  # Sur workflow_run, github.sha pointe déjà le commit de la CI déclencheuse ;
+  # head_sha est explicite, avec repli sur github.sha pour workflow_dispatch.
+  GIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Ne déploie que si la CI a réussi (toujours OK en déclenchement manuel).
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # Requis par Workload Identity Federation (jeton OIDC GitHub).
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.GAR_REPOSITORY }}/homepedia-api:${{ github.event.workflow_run.head_sha || github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Déployer exactement le commit validé par la CI.
+          ref: ${{ env.GIT_SHA }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        run: |
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE }}
+          region: ${{ vars.GCP_REGION }}
+          image: ${{ env.IMAGE }}
+          env_vars: |
+            API_CORS_ORIGINS=${{ vars.API_CORS_ORIGINS }}
+
+      - name: Show service URL
+        run: echo "Deployed to ${{ steps.deploy.outputs.url }}"
