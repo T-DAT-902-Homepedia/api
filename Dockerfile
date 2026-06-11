@@ -16,6 +16,4 @@ USER appuser
 ENV PORT=8000
 EXPOSE 8000
 
-# En conteneur local, la base est accessible via le service `postgis` du compose.
-# Surcharger API_DATABASE_URL si besoin.
 CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
