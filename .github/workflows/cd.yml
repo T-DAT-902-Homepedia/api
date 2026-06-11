@@ -57,6 +57,8 @@ jobs:
           service: ${{ env.SERVICE }}
           region: ${{ vars.GCP_REGION }}
           image: ${{ env.IMAGE }}
+          # API publique consommée par la webapp.
+          flags: --allow-unauthenticated
           env_vars: |
             API_CORS_ORIGINS=${{ vars.API_CORS_ORIGINS }}
 
