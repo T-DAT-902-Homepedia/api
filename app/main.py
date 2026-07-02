@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from .config import settings
 from .db import create_pool
-from .routers import choropleth, health
+from .routers import choropleth, health, transport
 
 
 @asynccontextmanager
@@ -31,7 +31,10 @@ app = FastAPI(
 
 # Compression : les FeatureCollections GeoJSON (parfois plusieurs Mo) se
 # compressent très bien. minimum_size évite de gzip les petites réponses.
-app.add_middleware(GZipMiddleware, minimum_size=1024)
+# compresslevel=1 : sur des payloads de dizaines de Mo, le niveau 9 par défaut
+# coûte plusieurs secondes de CPU pour ~10 % de taille en moins — mauvais
+# compromis. Le niveau 1 divise ce temps par ~4 pour une taille à peine plus grosse.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=1)
 
 app.add_middleware(
     CORSMiddleware,
@@ -49,3 +52,4 @@ async def on_db_error(_: Request, __: asyncpg.PostgresError) -> JSONResponse:
 
 app.include_router(health.router)
 app.include_router(choropleth.router)
+app.include_router(transport.router)
