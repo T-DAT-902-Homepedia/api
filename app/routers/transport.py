@@ -1,19 +1,17 @@
-"""Endpoints transport : géométrie communale, valeurs par mode, et arrêts (points).
+"""Endpoints transport : géométrie communale + densité d'arrêts par commune.
 
-La géométrie (lourde, identique pour tous les modes) et les valeurs (légères, par
-mode) sont servies séparément : le front charge la géométrie une fois et ne
-recharge que les valeurs en changeant de mode.
+La géométrie (lourde, statique) et les valeurs (légères, densité d'arrêts) sont
+servies séparément : le front charge la géométrie une fois et ne recharge que les
+valeurs. Données issues du silver duckpipe `transport_commune`.
 """
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Query, Response
 
 from ..db import get_connection
 from ..queries import (
     Lod,
-    RouteType,
     transport_geometry_query,
-    transport_stations_query,
     transport_values_query,
 )
 
@@ -63,39 +61,11 @@ async def transport_geometry(
 
 @router.get("/communes/values")
 async def transport_values(
-    route_type: RouteType = Query(RouteType.all),
     code_departement: str | None = Query(
         None, min_length=2, max_length=3, pattern=r"^[0-9AB]{2,3}$"
     ),
     conn: asyncpg.Connection = Depends(get_connection),
 ) -> Response:
-    """Valeurs (stations / population / densité) par commune pour un mode."""
-    payload = await conn.fetchval(
-        transport_values_query(), route_type.value, code_departement
-    )
+    """Densité d'arrêts (nb_arrets / densite_arrets_km2) par commune."""
+    payload = await conn.fetchval(transport_values_query(), code_departement)
     return _json_response(payload, _VALUES_CACHE)
-
-
-@router.get("/stations")
-async def transport_stations(
-    bbox: str = Query(..., description="min_lon,min_lat,max_lon,max_lat"),
-    route_type: RouteType | None = Query(None),
-    conn: asyncpg.Connection = Depends(get_connection),
-) -> Response:
-    """Points des arrêts individuels dans la bbox (filtrable par mode)."""
-    try:
-        min_lon, min_lat, max_lon, max_lat = (float(x) for x in bbox.split(","))
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail="bbox attendue : min_lon,min_lat,max_lon,max_lat",
-        ) from exc
-    payload = await conn.fetchval(
-        transport_stations_query(),
-        min_lon,
-        min_lat,
-        max_lon,
-        max_lat,
-        route_type.value if route_type is not None else None,
-    )
-    return _geojson_response(payload, _VALUES_CACHE)
